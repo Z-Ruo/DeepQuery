@@ -1,0 +1,212 @@
+/* Moved CSS styles from Home.vue to this file */
+
+
+
+
+.sidebar {
+  width: 250px;
+  background-color: #f4f4f4;
+  background: #ffffff;
+  border-right: 1px solid #ddd;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+
+.model-selection-area {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.response-area {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tools-area {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
+  background: #f9f9f9;
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+
+
+
+/* 确保主内容区域有正确的滚动行为 */
+
+
+/* 确保响应区域有正确的滚动行为 */
+.response-area {
+  flex: 1;
+  overflow-y: auto; /* 只允许响应区域内部滚动 */
+  max-height: calc(100vh - 200px); /* 根据实际布局调整 */
+}
+
+.knowledge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.knowledge-item {
+  margin-bottom: 10px;
+}
+
+.kb-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.kb-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kb-icon {
+  margin-right: 10px;
+  color: #409eff;
+}
+
+.kb-name {
+  margin-right: 20px;
+}
+
+.kb-dialog .el-dialog__header {
+  display: none;
+}
+.kb-dialog .el-dialog__body {
+  background: #c5e0f3;
+  border-radius: 20px;
+  padding: 0;
+}
+.kb-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #b6e1ff;
+  border-radius: 20px 20px 0 0;
+  padding: 24px 32px 16px 32px;
+  margin-bottom: 0;
+}
+.kb-header-icon {
+  width: 32px;
+  height: 32px;
+  margin-right: 10px;
+}
+.kb-popup-header h3 {
+  flex: 1;
+  margin: 0 0 0 10px;
+  font-size: 20px;
+  color: #235074;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+.kb-add-btn {
+  background: #03a9f4;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 14px;
+  padding: 8px 18px;
+  transition: 0.3s;
+}
+.kb-add-btn:hover {
+  background: #0388c4;
+}
+.kb-list {
+  padding: 24px 32px 24px 32px;
+  background: #c5e0f3;
+  border-radius: 0 0 20px 20px;
+  min-height: 120px;
+}
+.kb-list-item {
+  margin-bottom: 18px;
+}
+.kb-content {
+  display: flex;
+  align-items: center;
+  background: #f7fbff;
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  gap: 16px;
+}
+.kb-icon {
+  font-size: 22px;
+  color: #409eff;
+  margin-right: 10px;
+}
+.kb-name {
+  font-size: 15px;
+  color: #235074;
+  font-weight: 500;
+  margin-right: 20px;
+  flex: 1;
+}
+.kb-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kb-actions .el-button {
+  color: #235074;
+  font-size: 13px;
+  padding: 0 8px;
+}
+.kb-actions .el-button:hover {
+  color: #03a9f4;
+}
+.kb-table {
+  background: #f7fbff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  margin-top: 16px;
+}
+.kb-table .el-table__header th {
+  background: #b6e1ff !important;
+  color: #235074;
+  font-weight: bold;
+  font-size: 15px;
+  border: none;
+}
+.kb-table .el-table__body td {
+  background: #f7fbff !important;
+  color: #235074;
+  font-size: 14px;
+  border: none;
+}
+.kb-table .el-table__row {
+  border-radius: 8px;
+}
+.kb-table .el-tag {
+  margin-right: 8px;
+}
+.kb-table .el-button {
+  background: #03a9f4;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 4px 12px;
+}
+.kb-table .el-button:hover {
+  background: #0388c4;
+}
+.status-summary {
+  padding: 16px 0 0 0;
+  display: flex;
+  gap: 12px;
+  margin-left: 16px;
+}
+.dialog-footer .el-button {
+  margin-left: 10px;
+}
+
