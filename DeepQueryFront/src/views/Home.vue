@@ -75,6 +75,14 @@
             </label>
           </div>
 
+          <!-- 添加功能模式切换 -->
+          <div class="mode-switch">
+            <el-radio-group v-model="activeMode" @change="handleModeChange">
+              <el-radio-button label="chat">对话模式</el-radio-button>
+              <el-radio-button label="rag">知识库问答</el-radio-button>
+            </el-radio-group>
+          </div>
+
           <!-- <button @click="toggleGradeSelect" class="toggle-selection-button">
             {{ showGradeSelect ? "切换到模型选择" : "切换到年级选择" }}
           </button> -->
@@ -358,68 +366,313 @@
           <img :src="isLoading ? huifuIcon : fasongIcon" alt="提问" />
         </button>
       </div>
-    </main>
-  </div>
 
-  <!-- 添加 ProfilePopup 组件 -->
-  <ProfilePopup v-model:visible="showProfile" />
+      <!-- 添加模式条件渲染 -->
+      <div v-if="activeMode === 'chat'" class="chat-container">
+        <!-- 原有的对话组件 -->
+        <div class="message-container">
+          <div class="response-area" ref="responseArea">
+            <Welcome v-if="chatHistory.length === 0" />
+            <div v-else>
+              <div
+                v-for="(chat, index) in chatHistory"
+                :key="index"
+                class="chat-item"
+              >
+                <div class="question-title">
+                  <div class="user-info">
+                    <img src="@/assets/yonghu.svg" alt="访客_huisuan" width="24" />
+                    <span class="role-text user-text">访客_huisuan</span>
+                  </div>
+                  <span
+                    class="question-content"
+                    @click="copyToInput(chat.question)"
+                  >
+                    {{ chat.question }}
+                    <div class="tooltip-wrapper">
+                      <div class="tooltip-content">
+                        <img
+                          src="@/assets/fuzhi.svg"
+                          alt="复制"
+                          class="copy-icon"
+                        />
+                        <span>复制到输入框</span>
+                      </div>
+                    </div>
+                  </span>
+                </div>
+                <div class="answer-content markdown-content">
+                  <div class="answer-main">
+                    <div class="bot-info">
+                      <img src="@/assets/logo-bg.jpg" alt="徽算" width="24" />
+                      <span class="role-text bot-text">徽算</span>
+                    </div>
+                    <span class="answer-text" v-html="chat.response"></span>
+                    <span v-if="chat.isStreaming" class="streaming-indicator">
+                      <i class="el-icon-loading"></i>
+                      思考中...
+                    </span>
+                    <span v-if="chat.isCancelled" class="cancelled-indicator">
+                      回答取消
+                    </span>
 
-  <!-- 优化后的知识库管理弹窗 -->
-  <el-dialog
-    v-model="showKnowledgeDialog"
-    title=""
-    width="420px"
-    class="kb-dialog"
-    append-to-body
-  >
-    <div class="kb-popup-header">
-      <img src="@/assets/zsk.png" alt="知识库管理" class="kb-header-icon" />
-      <h3>知识库管理</h3>
-      <el-button
-        type="primary"
-        size="small"
-        @click="showAddDialog = true"
-        class="kb-add-btn"
-      >
-        添加知识库
-      </el-button>
-    </div>
-    <div class="kb-list">
-      <div v-for="grade in grades" :key="grade.value" class="kb-list-item">
-        <div class="kb-content">
-          <i class="el-icon-folder-opened kb-icon"></i>
-          <span class="kb-name">{{ grade.label }}</span>
-          <div class="kb-actions">
-            <el-button link size="small" @click="viewKnowledgeBase(grade.value)">
-              <i class="el-icon-view"></i> 查看
-            </el-button>
-            <el-button
-              link
-              size="small"
-              @click="deleteKnowledgeBase(grade.value)"
-            >
-              <i class="el-icon-delete"></i> 删除
-            </el-button>
+                    <!-- 添加操作按钮组 -->
+                    <div class="answer-actions" v-if="!chat.isStreaming">
+                      <div
+                        class="action-button tooltip-container"
+                        :class="{ active: chat.isLiked }"
+                        @click="toggleLike(chat)"
+                      >
+                        <img src="@/assets/yes.svg" alt="点赞" />
+                        <div class="action-tooltip">非常不错</div>
+                      </div>
+                      <div
+                        class="action-button tooltip-container"
+                        :class="{ active: chat.isDisliked }"
+                        @click="toggleDislike(chat)"
+                      >
+                        <img src="@/assets/no.svg" alt="踩" />
+                        <div class="action-tooltip">还待改进</div>
+                      </div>
+                      <div
+                        class="action-button tooltip-container"
+                        @click="reAnswer(chat.question)"
+                      >
+                        <img src="@/assets/return.svg" alt="重新回答" />
+                        <div class="action-tooltip">重新回答</div>
+                      </div>
+                      <div
+                        class="action-button tooltip-container"
+                        @click="copyText(chat.response)"
+                      >
+                        <img src="@/assets/fuzhi.svg" alt="复制" />
+                        <div class="action-tooltip">复制文本</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 相关内容区域 -->
+                  <div class="related-section">
+                    <!-- 相关问题 -->
+                    <div
+                      v-if="chat.relatedQuestions.length > 0"
+                      class="related-items questions-section"
+                    >
+                      <div class="section-title">
+                        <span>相关问题</span>
+                      </div>
+                      <div class="questions-list">
+                        <div
+                          v-for="(question, qIndex) in chat.relatedQuestions"
+                          :key="'q' + qIndex"
+                          class="related-item"
+                          @click="handleRelatedQuestionClick(question)"
+                        >
+                          <el-tooltip :content="question" placement="top">
+                            <div class="item-content">
+                              <i class="el-icon-question"></i>
+                              <span class="item-text">{{ question }}</span>
+                            </div>
+                          </el-tooltip>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 相关文献 -->
+                    <div
+                      v-if="showGradeSelect && chat.referenceFiles.length > 0"
+                      class="related-items reference-files-section"
+                      :class="{ 'show-all': chat.showAllReferences }"
+                    >
+                      <div class="reference-title">
+                        <span>相关文献</span>
+                        <span
+                          v-if="chat.referenceFiles.length > 3"
+                          class="view-all"
+                          @click="toggleReferenceFiles(chat)"
+                        >
+                          {{ chat.showAllReferences ? "收起" : "查看全部" }}
+                        </span>
+                      </div>
+                      <div class="reference-list">
+                        <div
+                          v-for="(file, fIndex) in chat.showAllReferences
+                            ? chat.referenceFiles
+                            : displayedReferences(chat.referenceFiles)"
+                          :key="'f' + fIndex"
+                          class="reference-item"
+                          @click="handleReferenceFileClick(file)"
+                        >
+                          <span class="file-name" :title="file.fileName">{{
+                            file.fileName
+                          }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="uploaded-images" v-if="uploadedImage">
+            <div class="image-previews">
+              <div class="image-item">
+                <img :src="uploadedImage.preview" class="thumbnail" alt="" />
+                <el-icon class="remove-icon" @click="removeImage()">
+                  <Delete />
+                  <!-- 使用Element Plus的删除图标 -->
+                </el-icon>
+              </div>
+            </div>
+          </div>
+          <div class="tools-area">
+            <div class="tools-left">
+              <!-- 新建对话按钮 -->
+              <div class="tooltip-container">
+                <button @click="createNewChat" class="new-chat-button">
+                  <i class="el-icon-plus"></i>
+                  <span>新建对话</span>
+                </button>
+              </div>
+
+              <!-- 文件上传图标 -->
+              <div class="tooltip-container">
+                <label class="file-label" @click="triggerFileUpload">
+                  <img
+                    src="@/assets/shangchuanwenjian.svg"
+                    alt="上传文件"
+                    width="20"
+                  />
+                </label>
+                <div class="tooltip">上传pdf文件</div>
+              </div>
+              <input
+                type="file"
+                ref="imageInput"
+                :key="inputKey"
+                accept="image/*"
+                @change="handleImageUpload"
+                style="display: none"
+              />
+              <!-- 图片上传图标 -->
+              <div class="tooltip-container">
+                <label class="image-label" @click="triggerImageUpload">
+                  <img src="@/assets/shangchuantup.svg" alt="上传图片" width="20" />
+                </label>
+                <div class="tooltip">上传图片</div>
+              </div>
+              <input
+                type="file"
+                @change="handleImageUpload"
+                accept="image/*"
+                class="image-input"
+                ref="imageInput"
+                style="display: none"
+                id="imageInput"
+                name="imageInput"
+              />
+              <!-- 语音识别图标 -->
+              <div class="tooltip-container">
+                <button @click="startVoiceRecognition" class="voice-button">
+                  <img src="@/assets/yuyinshibie.svg" alt="语音识别" width="20" />
+                </button>
+                <div class="tooltip">语音识别</div>
+              </div>
+            </div>
+
+            <div class="tools-right">
+              <!-- 取消回答按钮 -->
+              <div class="tooltip-container" v-if="isStreaming">
+                <button @click="cancelAnswer" class="cancel-button">
+                  取消回答
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="question-area">
+            <textarea
+              v-model="question"
+              placeholder="请输入您的问题"
+              class="question-input"
+              id="questionInput"
+              name="questionInput"
+              maxlength="1000"
+              rows="1"
+              @keydown="handleKeyDown"
+            ></textarea>
+            <button @click="askQuestion" class="ask-button" :disabled="isLoading">
+              <img :src="isLoading ? huifuIcon : fasongIcon" alt="提问" />
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  </el-dialog>
+      
+      <!-- RAG问答组件 -->
+      <div v-else-if="activeMode === 'rag'" class="rag-container">
+        <RagQAComponent :sessionId="currentSessionId" />
+      </div>
+      
+      <!-- 添加 ProfilePopup 组件 -->
+      <ProfilePopup v-model:visible="showProfile" />
 
-  <!-- 添加知识库的弹窗 -->
-  <el-dialog v-model="showAddDialog" title="添加知识库" width="420px" class="kb-dialog" append-to-body>
-    <el-input v-model="newKbName" placeholder="请输入知识库名称" clearable>
-    </el-input>
-    <template #footer>
-      <span class="dialog-footer">
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" @click="createKnowledgeBase">确定</el-button>
-      </span>
-    </template>
-  </el-dialog>
+      <!-- 优化后的知识库管理弹窗 -->
+      <el-dialog
+        v-model="showKnowledgeDialog"
+        title=""
+        width="420px"
+        class="kb-dialog"
+        append-to-body
+      >
+        <div class="kb-popup-header">
+          <img src="@/assets/zsk.png" alt="知识库管理" class="kb-header-icon" />
+          <h3>知识库管理</h3>
+          <el-button
+            type="primary"
+            size="small"
+            @click="showAddDialog = true"
+            class="kb-add-btn"
+          >
+            添加知识库
+          </el-button>
+        </div>
+        <div class="kb-list">
+          <div v-for="grade in grades" :key="grade.value" class="kb-list-item">
+            <div class="kb-content">
+              <i class="el-icon-folder-opened kb-icon"></i>
+              <span class="kb-name">{{ grade.label }}</span>
+              <div class="kb-actions">
+                <el-button link size="small" @click="viewKnowledgeBase(grade.value)">
+                  <i class="el-icon-view"></i> 查看
+                </el-button>
+                <el-button
+                  link
+                  size="small"
+                  @click="deleteKnowledgeBase(grade.value)"
+                >
+                  <i class="el-icon-delete"></i> 删除
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-dialog>
 
-  <!-- QAComponent 组件 -->
-  <QAComponent />
+      <!-- 添加知识库的弹窗 -->
+      <el-dialog v-model="showAddDialog" title="添加知识库" width="420px" class="kb-dialog" append-to-body>
+        <el-input v-model="newKbName" placeholder="请输入知识库名称" clearable>
+        </el-input>
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="showAddDialog = false">取消</el-button>
+            <el-button type="primary" @click="createKnowledgeBase">确定</el-button>
+          </span>
+        </template>
+      </el-dialog>
+
+      <!-- QAComponent 组件 -->
+      <QAComponent />
+    </main>
+  </div>
 </template>
 
 <script>
@@ -446,6 +699,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { Delete } from "@element-plus/icons-vue";
 import QAComponent from "../components/QAComponent.vue";
+import RagQAComponent from "../components/RagQAComponent.vue"; // 导入新组件
 import "../assets/style/home.css"; // Added external CSS file for Home.vue
 
 export default {
@@ -455,6 +709,7 @@ export default {
     Welcome,
     SessionList,
     QAComponent,
+    RagQAComponent, // 注册RAG组件
   },
   data() {
     return {
@@ -507,6 +762,7 @@ export default {
       },
       showKnowledgeDialog: false,
       rawResponse: "",
+      activeMode: 'chat', // 默认为普通对话模式
     };
   },
 
@@ -955,10 +1211,25 @@ export default {
       this.showModelPopup = false;
       this.showGradePopup = false;
     },
+    handleModeChange(mode) {
+      // 处理模式切换
+      console.log('Mode changed to:', mode);
+      // 可以在此处执行其他相关操作
+    },
   },
 };
 </script>
 
 <style scoped>
 @import "@/assets/style/markdown.css";
+
+/* 添加RAG模式相关样式 */
+.mode-switch {
+  margin-left: 20px;
+}
+
+.rag-container {
+  height: calc(100vh - 60px);
+  padding: 16px;
+}
 </style>

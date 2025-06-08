@@ -216,3 +216,46 @@ export const logout = () => {
   localStorage.removeItem('token');
   localStorage.removeItem('userId');
 };
+
+/**
+ * 使用 RAG 进行问答
+ * @param {string} query - 用户问题
+ * @param {string} collectionName - 知识库名称
+ * @param {number} maxResults - 最大检索结果数
+ * @param {number} sessionId - 会话ID（可选）
+ * @returns {Promise} - 返回RAG问答结果
+ */
+export const askRagQuestion = (query, collectionName, maxResults = 3, sessionId = null) => {
+  return axios.post('/v1/rag/question', {
+    query,
+    collectionName,
+    maxResults,
+    sessionId,
+    model: 'qwen2.5:0.5b' // 默认使用这个模型
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  }).then(response => response.data);
+};
+
+// 获取所有知识库列表
+export const getKnowledgeBases = () => {
+  return axios.post('/v1/rag/collections/list', {}, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  }).then(response => response.data);
+};
+
+// 获取特定知识库中的文档
+export const getKnowledgeBaseDocuments = (collectionName) => {
+  return axios.post(`/v1/rag/collections/${collectionName}/documents`, {}, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  }).then(response => response.data);
+};

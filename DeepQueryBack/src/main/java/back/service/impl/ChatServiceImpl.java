@@ -1,34 +1,47 @@
 package back.service.impl;
 
-import back.entity.DialogueSessionInfo;
-import back.entity.HistoryRecordInfo;
-import back.model.*;
-import back.repository.DialogueSessionsRepository;
-import back.repository.HistoryRecordsRepository;
-import back.service.ChatService;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-
-import okhttp3.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import back.entity.DialogueSessionInfo;
+import back.entity.HistoryRecordInfo;
+import back.model.ChatRequest;
+import back.model.ChatResponse;
+import back.model.ChatStreamResponse;
+import back.model.History;
+import back.model.Message;
+import back.model.OllamaChatRequest;
+import back.model.OllamaChatResponse;
+import back.model.OllamaMessage;
+import back.repository.DialogueSessionsRepository;
+import back.repository.HistoryRecordsRepository;
+import back.service.ChatService;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 @Service
 public class ChatServiceImpl implements ChatService {
@@ -329,6 +342,10 @@ public class ChatServiceImpl implements ChatService {
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", requestDTO.getZhipu_model());
         requestBody.put("stream", stream);
+        if(requestDTO.getHistory() == null) {
+            requestDTO.setHistory(new History());
+        }
+        // 确保历史记录不为 null
         // 构建 messages 数组
         List<ObjectNode> messages = requestDTO.getHistory().getMessages().stream()
                 .map(message -> {
