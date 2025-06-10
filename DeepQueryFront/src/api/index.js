@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // 设置全局 Axios 默认值
-axios.defaults.baseURL = 'http://111.229.211.148:8080/';
+axios.defaults.baseURL = 'http://localhost:8080/';
 axios.defaults.timeout = 30000; // 增加超时时间到30秒
 axios.defaults.headers.common['Content-Type'] = 'application/json'; // 设置全局默认请求头
 

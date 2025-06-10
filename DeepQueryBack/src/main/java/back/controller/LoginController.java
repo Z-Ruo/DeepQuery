@@ -27,11 +27,11 @@ public class LoginController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponseModel> login(@RequestBody LoginRequest loginRequest) {
         logger.info("Login attempt for username: {} from IP: {}", loginRequest.getUsername(), loginRequest.getIp());
-        boolean success = loginService.login(loginRequest.getUsername(), loginRequest.getPassword(), loginRequest.getIp());
-        if (success) {
+        Integer userId = loginService.login(loginRequest.getUsername(), loginRequest.getPassword(), loginRequest.getIp());
+        if (userId != null) {
             String token = JwtUtil.generateToken(loginRequest.getUsername());
-            logger.info("Login successful for username: {}", loginRequest.getUsername());
-            return ResponseEntity.ok(new LoginResponseModel("" , 200, token));
+            logger.info("Login successful for username: {}, userId: {}", loginRequest.getUsername(), userId);
+            return ResponseEntity.ok(new LoginResponseModel("" , 200, token, userId));
         } else {
             logger.warn("Login failed for username: {}", loginRequest.getUsername());
             return ResponseEntity.status(401).body(new LoginResponseModel("用户名或密码错误", 401, null));

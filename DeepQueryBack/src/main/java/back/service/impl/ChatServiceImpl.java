@@ -160,6 +160,9 @@ public class ChatServiceImpl implements ChatService {
 
             Message message = new Message("assistant", extractedContent, Instant.now());
 
+            // 保存AI回复到数据库
+            saveAssistantResponse(requestDTO.getSessionId(), message);
+
             if (requestDTO.getHistory() == null) {
                 requestDTO.setHistory(new History());
             }
@@ -196,6 +199,9 @@ public class ChatServiceImpl implements ChatService {
             }
 
             Message message = new Message("model", extractedContent, Instant.now());
+
+            // 保存AI回复到数据库
+            saveAssistantResponse(requestDTO.getSessionId(), message);
 
             // 确保 history 不为 null
             if (requestDTO.getHistory() == null) {
@@ -529,5 +535,26 @@ public class ChatServiceImpl implements ChatService {
         DialogueSessionInfo dialogueSessionInfo = dialogueSessionsRepository.findById(requestDTO.getSessionId()).orElse(null);
         historyRecordInfo.setSession(dialogueSessionInfo);
         historyRecordsRepository.save(historyRecordInfo);
+    }
+
+    // 保存AI回复到数据库
+    private void saveAssistantResponse(Integer sessionId, Message message) {
+        if (sessionId == null) {
+            System.err.println("Warning: sessionId is null, skipping assistant response save");
+            return;
+        }
+        
+        try {
+            HistoryRecordInfo historyRecordInfo = new HistoryRecordInfo();
+            historyRecordInfo.setContent(message.getContent());
+            historyRecordInfo.setRole(message.getRole());
+            historyRecordInfo.setTimestamp(message.getTimestamp());
+            DialogueSessionInfo dialogueSessionInfo = dialogueSessionsRepository.findById(sessionId).orElse(null);
+            historyRecordInfo.setSession(dialogueSessionInfo);
+            historyRecordsRepository.save(historyRecordInfo);
+            System.out.println("Saved assistant response for session " + sessionId);
+        } catch (Exception e) {
+            System.err.println("Failed to save assistant response: " + e.getMessage());
+        }
     }
 }

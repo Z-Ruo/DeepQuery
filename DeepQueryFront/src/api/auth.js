@@ -17,12 +17,15 @@ export const login = async (username, password) => {
       username,
       password,
       ip
-    });
-    console.log('登录响应:', response.data);
-    // 如果登录成功，保存token和用户名到localStorage
+    });    console.log('登录响应:', response.data);
+    // 如果登录成功，保存token、用户名和用户ID到localStorage
     if (response.data && response.data.status === 200) {
-      localStorage.setItem('token', response.data.token); // 确保key为'token'，如果拦截器使用'token'
+      localStorage.setItem('token', response.data.token);
       localStorage.setItem('username', username);
+      // 保存从后端返回的用户ID
+      if (response.data.userId) {
+        localStorage.setItem('userId', response.data.userId.toString());
+      }
     }
     
     return response.data;
@@ -72,11 +75,37 @@ export const getCurrentUsername = () => {
 };
 
 /**
+ * 获取用户信息（从localStorage获取真实的用户ID）
+ * @returns {Object} - 返回包含用户信息的对象
+ */
+export const getUserInfo = () => {
+  const username = getCurrentUsername();
+  const userId = localStorage.getItem('userId');
+  
+  if (!username) {
+    return null;
+  }
+  
+  // 如果没有保存的userId，可能是旧版本登录的用户，需要重新登录
+  if (!userId) {
+    console.warn('未找到用户ID，可能需要重新登录');
+    return null;
+  }
+  
+  return {
+    id: parseInt(userId, 10), // 转换为数字
+    username: username,
+    // 其他字段可以根据需要添加
+  };
+};
+
+/**
  * 用户登出
  */
 export const logout = () => {
-  localStorage.removeItem('token'); // 确保key为'token'
+  localStorage.removeItem('token');
   localStorage.removeItem('username');
+  localStorage.removeItem('userId'); // 清除用户ID
   // 可选：通知服务器端会话失效，如果后端有相应接口
   // return axios.post('/v1/auth/logout'); 
 };
@@ -87,5 +116,6 @@ export default {
   register,
   isLoggedIn,
   getCurrentUsername,
+  getUserInfo,
   logout
 };

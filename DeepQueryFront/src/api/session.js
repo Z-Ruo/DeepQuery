@@ -17,6 +17,15 @@ export const startSession = async (sessionData) => {
 };
 
 /**
+ * 创建新会话的别名方法，为了保持兼容性
+ * @param {Object} sessionData - 会话数据  
+ * @returns {Promise} - 返回创建结果的Promise
+ */
+export const createSession = async (sessionData) => {
+  return startSession(sessionData);
+};
+
+/**
  * 获取用户的所有会话列表
  * @param {number} userId - 用户ID
  * @returns {Promise} - 返回会话列表的Promise
@@ -129,6 +138,7 @@ export const saveSessionMessage = async (sessionId, message) => {
 
 export default {
   startSession,
+  createSession,
   listSessions,
   getPreviousSession,
   getSessionMessages,

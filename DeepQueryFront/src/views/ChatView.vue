@@ -19,8 +19,98 @@
       </span>
     </div>
     
+    <!-- 会话管理工具栏 -->
+    <div class="session-toolbar">
+      <div class="session-info">
+        <h3 v-if="currentSessionTitle" class="current-session-title" :title="currentSessionTitle">
+          💬 {{ currentSessionTitle }}
+        </h3>
+        <h3 v-else class="current-session-title">
+          💬 新对话
+        </h3>
+      </div>
+      
+      <div class="session-actions">
+        <button 
+          @click="createNewSession" 
+          class="session-action-btn new-session"
+          :disabled="isLoading"
+          title="新建会话"
+        >
+          ➕ 新建会话
+        </button>
+        
+        <button 
+          @click="toggleSessionsList" 
+          class="session-action-btn sessions-list"
+          title="查看会话列表"
+        >
+          📄 会话列表
+        </button>
+        
+        <button 
+          v-if="currentSessionId" 
+          @click="deleteCurrentSession" 
+          class="session-action-btn delete-session"
+          :disabled="isLoading"
+          title="删除当前会话"
+        >
+          🗑️ 删除
+        </button>
+      </div>
+    </div>
+    
     <!-- 主体区域 - 分为左侧知识库面板和右侧对话区域 -->
     <div class="main-content">
+      <!-- 会话列表面板 -->
+      <div v-if="showSessionsList" class="sessions-list-panel">
+        <div class="sessions-header">
+          <h3>💬 会话列表</h3>
+          <button @click="showSessionsList = false" class="close-sessions-btn" title="关闭会话列表">×</button>
+        </div>
+        
+        <div v-if="isLoadingSessions" class="sessions-loading">
+          <span class="loading-spinner">⏳</span>
+          正在加载会话...
+        </div>
+        
+        <div v-else class="sessions-content">
+          <div v-if="allSessions.length === 0" class="sessions-empty">
+            <span class="empty-icon">💬</span>
+            <div class="empty-text">
+              <p>暂无会话记录</p>
+              <small>开始新的对话吧</small>
+            </div>
+          </div>
+          
+          <div v-else class="sessions-items">
+            <div 
+              v-for="sessionInfo in allSessions" 
+              :key="sessionInfo.sessionId"
+              @click="switchToSession(sessionInfo)" 
+              class="session-list-item"
+              :class="{ 'active': sessionInfo.sessionId === currentSessionId }"
+            >
+              <div class="session-item-header">
+                <div class="session-item-title" :title="sessionInfo.title">
+                  {{ sessionInfo.title || `会话 ${sessionInfo.sessionId}` }}
+                </div>
+                <div class="session-item-time">
+                  {{ formatSessionTime(sessionInfo.updatedAt) }}
+                </div>
+              </div>
+              
+              <div v-if="sessionInfo.messages && sessionInfo.messages.length > 0" class="session-item-preview">
+                <small>{{ getLastMessagePreview(sessionInfo.messages) }}</small>
+              </div>
+              <div v-else class="session-item-preview">
+                <small class="no-messages">暂无消息</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <!-- 左侧知识库选择面板 -->
       <div class="left-sidebar">
         <!-- 知识库选择区域 -->
@@ -165,13 +255,17 @@
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { streamChatCompletions, parseSSEStream, handleStreamResponse, handleStreamResponseWithConnectionCheck } from '../api/chat.js'; // 确保路径正确
 import { getKnowledgeBases, askRagQuestion } from '../api/rag.js'; // 导入RAG相关API
+import { session, auth } from '@/api'; // 导入会话API和认证API
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 
+const route = useRoute();
+const router = useRouter();
 const messages = ref([]);
 const newMessage = ref('');
 const isLoading = ref(false);
@@ -182,10 +276,15 @@ const skipTypewriter = ref(false); // 控制是否跳过打字机效果
 const enableTypewriterEffect = ref(false); // 控制是否启用打字机效果（默认关闭以获得最快响应）
 const scrollThrottled = ref(false); // 滚动节流
 const currentModel = ref('zhipu'); // 当前选择的模型，默认为 zhipu
+const currentSessionId = ref(null); // 当前会话ID
 const knowledgeBases = ref([]); // 知识库列表
 const selectedKnowledgeBase = ref(null); // 选中的知识库
 const isKnowledgeBasesLoading = ref(false); // 知识库加载状态
 const currentSources = ref([]); // 当前RAG响应的参考来源
+const currentSessionTitle = ref(''); // 当前会话标题
+const showSessionsList = ref(false); // 控制会话列表显示
+const allSessions = ref([]); // 所有会话列表
+const isLoadingSessions = ref(false); // 会话列表加载状态
 
 // Helper to scroll to the bottom of the chat messages with throttling
 const scrollToBottom = async () => {
@@ -313,6 +412,156 @@ const closeSources = () => {
   currentSources.value = [];
 };
 
+// 加载所有会话列表
+const loadAllSessions = async () => {
+  try {
+    isLoadingSessions.value = true;
+    const userInfo = auth.getUserInfo();
+    if (!userInfo || !userInfo.id) {
+      console.error('用户未登录');
+      return;
+    }
+    
+    const sessions = await session.listSessions(userInfo.id);
+    allSessions.value = sessions || [];
+    console.log('加载了会话列表:', allSessions.value.length, '个会话');
+  } catch (error) {
+    console.error('加载会话列表失败:', error);
+    allSessions.value = [];
+  } finally {
+    isLoadingSessions.value = false;
+  }
+};
+
+// 切换会话列表显示
+const toggleSessionsList = () => {
+  showSessionsList.value = !showSessionsList.value;
+  if (showSessionsList.value && allSessions.value.length === 0) {
+    loadAllSessions();
+  }
+};
+
+// 切换到指定会话
+const switchToSession = async (sessionInfo) => {
+  if (sessionInfo.sessionId === currentSessionId.value) {
+    showSessionsList.value = false;
+    return;
+  }
+  
+  try {
+    isLoading.value = true;
+    currentSessionId.value = sessionInfo.sessionId;
+    currentSessionTitle.value = sessionInfo.title || '对话';
+    localStorage.setItem('sessionId', currentSessionId.value.toString());
+    
+    // 清空当前消息和知识库选择
+    messages.value = [];
+    selectedKnowledgeBase.value = null;
+    currentSources.value = [];
+    
+    // 加载会话历史消息
+    await loadSessionMessages(currentSessionId.value);
+    showSessionsList.value = false;
+    
+    console.log('切换到会话:', sessionInfo.title);
+  } catch (error) {
+    console.error('切换会话失败:', error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// 格式化会话时间
+const formatSessionTime = (timeString) => {
+  if (!timeString) return '';
+  
+  const date = new Date(timeString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) {
+    return '今天 ' + date.toLocaleTimeString('zh-CN', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  } else if (diffDays === 1) {
+    return '昨天 ' + date.toLocaleTimeString('zh-CN', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  } else if (diffDays < 7) {
+    return `${diffDays}天前`;
+  } else {
+    return date.toLocaleDateString('zh-CN');
+  }
+};
+
+// 获取最后消息预览
+const getLastMessagePreview = (messages) => {
+  if (!messages || messages.length === 0) return '';
+  
+  const lastMessage = messages[messages.length - 1];
+  const content = lastMessage.content || '';
+  const maxLength = 50;
+  
+  const prefix = lastMessage.role === 'user' ? '您: ' : 'AI: ';
+  const truncated = content.length > maxLength ? content.substring(0, maxLength) + '...' : content;
+  
+  return prefix + truncated;
+};
+
+// 加载指定会话的历史消息
+const loadSessionMessages = async (sessionId) => {
+  try {
+    isLoading.value = true;
+    const sessionMessages = await session.getSessionMessages(sessionId);
+    
+    if (sessionMessages && sessionMessages.length > 0) {
+      // 将历史消息转换为当前聊天格式
+      messages.value = sessionMessages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        isLoadingChunk: false
+      }));
+      
+      // 设置会话标题：使用第一条用户消息作为标题
+      const firstUserMessage = sessionMessages.find(msg => msg.role === 'user');
+      if (firstUserMessage && firstUserMessage.content) {
+        currentSessionTitle.value = firstUserMessage.content.length > 20 
+          ? firstUserMessage.content.substring(0, 20) + '...' 
+          : firstUserMessage.content;
+      } else {
+        currentSessionTitle.value = `会话 ${sessionId}`;
+      }
+      
+      console.log(`加载了 ${sessionMessages.length} 条历史消息`);
+      await scrollToBottom();
+    } else {
+      // 如果没有历史消息，显示欢迎消息
+      currentSessionTitle.value = `会话 ${sessionId}`;
+      initializeWelcomeMessage();
+    }
+  } catch (error) {
+    console.error('加载会话消息失败:', error);
+    // 加载失败时显示欢迎消息
+    currentSessionTitle.value = `会话 ${sessionId}`;
+    initializeWelcomeMessage();
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// 初始化欢迎消息
+const initializeWelcomeMessage = () => {
+  messages.value = [{
+    role: 'assistant', 
+    content: '你好！我是智能助手，有什么可以帮助你的吗？\n\n我可以处理各种问题，包括：\n- **编程相关问题**\n- 学术研究\n- 日常咨询\n\n**功能说明：**\n- 🤖/🦙 按钮：切换 智谱AI/Ollama 模型\n- ⚡/📝 按钮：切换快速显示/打字机效果\n- 📚 按钮：选择知识库进行RAG问答\n\n请随时提问！', 
+    timestamp: new Date().toISOString()
+  }];
+};
+
 // 滚动到源面板顶部
 const scrollSourcesToTop = () => {
   const sourcesContent = document.querySelector('.sources-content');
@@ -374,7 +623,7 @@ const sendMessage = async () => {
           trimmedMessage, 
           selectedKnowledgeBase.value, 
           3, // maxResults
-          parseInt(localStorage.getItem('sessionId'), 10) || null
+          currentSessionId.value || parseInt(localStorage.getItem('sessionId'), 10) || null
         );
         
         // 处理RAG响应
@@ -454,7 +703,8 @@ const performNormalChat = async (trimmedMessage) => {
   // 使用带连接检查的处理函数，启用真正的流式显示
   await handleStreamResponseWithConnectionCheck(currentModel.value, currentMessages, { 
     maxRetries: 3,
-    timeout: 60000 // 减少到1分钟超时
+    timeout: 60000, // 减少到1分钟超时
+    sessionId: currentSessionId.value || parseInt(localStorage.getItem('sessionId'), 10) || null
   }, async (chunk) => {
     console.log('Received chunk:', chunk); // 调试日志
     
@@ -536,18 +786,99 @@ const retryLastMessage = async () => {
   }
 };
 
+// 新建会话
+const createNewSession = async () => {
+  try {
+    isLoading.value = true;
+    // 调用API创建新会话
+    const userInfo = auth.getUserInfo();
+    if (!userInfo || !userInfo.id) {
+      throw new Error('用户未登录');
+    }
+    const response = await session.startSession({ userId: userInfo.id });
+    
+    if (response && response.sessionId) {
+      currentSessionId.value = response.sessionId;
+      localStorage.setItem('sessionId', currentSessionId.value.toString());
+      currentSessionTitle.value = response.title || '新对话';
+      
+      // 清空消息和知识库选择
+      messages.value = [];
+      selectedKnowledgeBase.value = null;
+      currentSources.value = [];
+      
+      console.log('新建会话成功:', response);
+      // 显示欢迎消息
+      initializeWelcomeMessage();
+      await scrollToBottom();
+      
+      // 重新加载会话列表
+      await loadAllSessions();
+    } else {
+      console.error('新建会话响应格式错误:', response);
+    }
+  } catch (error) {
+    console.error('新建会话失败:', error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// 查看会话列表
+const goToSessionsList = () => {
+  // 跳转到会话列表页面
+  router.push('/sessions');
+};
+
+// 删除当前会话
+const deleteCurrentSession = async () => {
+  if (!currentSessionId.value) return;
+
+  const confirmed = confirm('确定要删除当前会话吗？此操作无法撤销。');
+  if (!confirmed) return;
+
+  try {
+    isLoading.value = true;
+    // 调用API删除当前会话
+    await session.deleteSession(currentSessionId.value);
+    
+    // 删除成功后，清空会话ID和消息
+    currentSessionId.value = null;
+    localStorage.removeItem('sessionId');
+    messages.value = [];
+    currentSessionTitle.value = '';
+    
+    alert('会话删除成功');
+    console.log('会话删除成功');
+  } catch (error) {
+    console.error('删除会话失败:', error);
+    alert('删除会话失败，请稍后重试');
+  } finally {
+    isLoading.value = false;
+  }
+};
+
 // Load initial messages or perform other setup if needed
-onMounted(() => {
-  // 示例：添加欢迎消息来测试渲染
-  messages.value = [{
-    role: 'assistant', 
-    content: '你好！我是智能助手，有什么可以帮助你的吗？\n\n我可以处理各种问题，包括：\n- **编程相关问题**\n- 学术研究\n- 日常咨询\n\n**功能说明：**\n- 🤖/🦙 按钮：切换 智谱AI/Ollama 模型\n- ⚡/📝 按钮：切换快速显示/打字机效果\n- 📚 按钮：选择知识库进行RAG问答\n\n请随时提问！', 
-    timestamp: new Date().toISOString()
-  }];
-  scrollToBottom();
+onMounted(async () => {
+  // 检查URL参数中是否有sessionId
+  const sessionId = route.query.sessionId;
+  
+  if (sessionId) {
+    // 如果有sessionId，设置当前会话ID并加载历史消息
+    currentSessionId.value = parseInt(sessionId, 10);
+    localStorage.setItem('sessionId', currentSessionId.value.toString());
+    await loadSessionMessages(currentSessionId.value);
+  } else {
+    // 如果没有sessionId，显示欢迎消息
+    initializeWelcomeMessage();
+    scrollToBottom();
+  }
   
   // 加载知识库列表
   loadKnowledgeBases();
+  
+  // 加载会话列表
+  loadAllSessions();
   
   // 监听网络状态变化
   const handleOnline = () => {
@@ -597,6 +928,169 @@ onMounted(() => {
   display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+/* 会话列表面板 */
+.sessions-list-panel {
+  width: 300px;
+  background-color: #ffffff;
+  border-right: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  overflow: hidden;
+  z-index: 100;
+}
+
+.sessions-header {
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sessions-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.close-sessions-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.close-sessions-btn:hover {
+  background-color: #e9ecef;
+  color: #333;
+  transform: scale(1.1);
+}
+
+.sessions-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #666;
+  font-style: italic;
+  gap: 10px;
+}
+
+.sessions-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sessions-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #999;
+  text-align: center;
+}
+
+.sessions-empty .empty-icon {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.sessions-empty .empty-text p {
+  margin: 0 0 5px 0;
+  font-weight: 500;
+}
+
+.sessions-empty .empty-text small {
+  color: #bbb;
+}
+
+.sessions-items {
+  padding: 10px;
+}
+
+.session-list-item {
+  padding: 12px 15px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  background-color: #fafafa;
+}
+
+.session-list-item:hover {
+  background-color: #f0f0f0;
+  border-color: #e9ecef;
+  transform: translateX(2px);
+}
+
+.session-list-item.active {
+  background-color: #e3f2fd;
+  border-color: #2196F3;
+  color: #1976d2;
+}
+
+.session-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  gap: 10px;
+}
+
+.session-item-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.session-item-time {
+  font-size: 0.75rem;
+  color: #666;
+  white-space: nowrap;
+  min-width: fit-content;
+}
+
+.session-item-preview {
+  font-size: 0.8rem;
+  color: #666;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item-preview .no-messages {
+  font-style: italic;
+  color: #999;
+}
+
+.session-list-item.active .session-item-time,
+.session-list-item.active .session-item-preview {
+  color: #1976d2;
 }
 
 /* 左侧边栏 */
@@ -818,7 +1312,7 @@ onMounted(() => {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 15px;
-  min-height: 0; /* 确保flex子元素可以缩小 */
+  min-height: 0; /* 让flex子元素可以缩小 */
   /* 自定义滚动条样式 */
   scrollbar-width: thin;
   scrollbar-color: #007bff #f1f1f1;
@@ -985,6 +1479,50 @@ onMounted(() => {
 .knowledge-base-status {
   font-weight: 400;
   margin-left: 8px;
+}
+
+.session-toolbar {
+  padding: 10px 15px;
+  background-color: #f1f3f5;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-info {
+  flex: 1;
+}
+
+.current-session-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #333;
+}
+
+.session-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.session-action-btn {
+  padding: 8px 12px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.session-action-btn:hover {
+  background-color: #0056b3;
+}
+
+.session-action-btn:disabled {
+  background-color: #a0cfff;
+  cursor: not-allowed;
 }
 
 .chat-messages {

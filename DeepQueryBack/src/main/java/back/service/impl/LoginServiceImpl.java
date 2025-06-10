@@ -1,16 +1,17 @@
 package back.service.impl;
 
-import back.entity.UserLoginInfo;
-import back.entity.UserInfo;
-import back.repository.UserRepository;
-import back.repository.UserLoginInfoRepository;
-import back.service.LoginService;
+import java.time.Instant;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import jakarta.transaction.Transactional;
 
-import java.time.Instant;
+import back.entity.UserInfo;
+import back.entity.UserLoginInfo;
+import back.repository.UserLoginInfoRepository;
+import back.repository.UserRepository;
+import back.service.LoginService;
+import jakarta.transaction.Transactional;
 
 @Service
 public class LoginServiceImpl implements LoginService {
@@ -26,7 +27,7 @@ public class LoginServiceImpl implements LoginService {
 
     @Override
     @Transactional
-    public boolean login(String username, String password, String ip) {
+    public Integer login(String username, String password, String ip) {
         UserInfo user = userRepository.findByUserName(username);
         if (user != null && passwordEncoder.matches(password, user.getPasswordHash())) {
             UserLoginInfo loginInfo = new UserLoginInfo();
@@ -34,9 +35,9 @@ public class LoginServiceImpl implements LoginService {
             loginInfo.setLastLoginTime(Instant.now());
             loginInfo.setLoginIp(ip); // 设置登录 IP
             userLoginInfoRepository.save(loginInfo);
-            return true;
+            return user.getId();
         }
-        return false;
+        return null;
     }
 
     @Override
