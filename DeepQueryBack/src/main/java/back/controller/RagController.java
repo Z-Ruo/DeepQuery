@@ -39,7 +39,7 @@ public class RagController {
         @RequestParam("collectionName") String collectionName) {
         try {
             SystemResopnse systemResopnse = new SystemResopnse();
-            DocumentInfo documentInfo = ragService.uploadDocument(file, collectionName);
+            ragService.uploadDocument(file, collectionName);
             systemResopnse.setStatus("success");
             systemResopnse.setMessage("文件上传成功");
             return ResponseEntity.ok(systemResopnse);
@@ -142,6 +142,42 @@ public class RagController {
     }
     
     /**
+     * 删除指定集合中的特定文档（根据文档ID）
+     */
+    @PostMapping("/collections/{collectionName}/documents/{documentId}/delete")
+    public ResponseEntity<SystemResopnse> deleteDocument(
+            @PathVariable String collectionName, 
+            @PathVariable Long documentId) {
+        try {
+            SystemResopnse response = ragService.deleteDocument(collectionName, documentId);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            SystemResopnse errorResponse = new SystemResopnse();
+            errorResponse.setStatus("error");
+            errorResponse.setMessage("删除文档失败: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+    
+    /**
+     * 删除指定集合中的特定文档（根据文件名）
+     */
+    @PostMapping("/collections/{collectionName}/documents/delete-by-name")
+    public ResponseEntity<SystemResopnse> deleteDocumentByFileName(
+            @PathVariable String collectionName, 
+            @RequestParam String fileName) {
+        try {
+            SystemResopnse response = ragService.deleteDocumentByFileName(collectionName, fileName);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            SystemResopnse errorResponse = new SystemResopnse();
+            errorResponse.setStatus("error");
+            errorResponse.setMessage("删除文档失败: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+    
+    /**
      * RAG问答端点：根据知识库中的文档回答问题
      * 
      * @param request 包含问题、知识库名称等的请求
@@ -150,6 +186,22 @@ public class RagController {
     @PostMapping("/question")
     public ResponseEntity<?> answerQuestion(@RequestBody RagQuestionRequest request) {
         try {
+            // 验证请求参数
+            if (request.getQuery() == null || request.getQuery().trim().isEmpty()) {
+                SystemResopnse errorResponse = new SystemResopnse();
+                errorResponse.setStatus("error");
+                errorResponse.setMessage("查询内容不能为空");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            if (request.getCollectionName() == null || request.getCollectionName().trim().isEmpty()) {
+                SystemResopnse errorResponse = new SystemResopnse();
+                errorResponse.setStatus("error");
+                errorResponse.setMessage("知识库名称不能为空");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            // 执行RAG问答
             RagQuestionResponse response = ragService.answerQuestion(request);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
@@ -157,6 +209,11 @@ public class RagController {
             errorResponse.setStatus("error");
             errorResponse.setMessage("处理RAG问答失败: " + e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);
+        } catch (Exception e) {
+            SystemResopnse errorResponse = new SystemResopnse();
+            errorResponse.setStatus("error");
+            errorResponse.setMessage("系统错误: " + e.getMessage());
+            return ResponseEntity.status(500).body(errorResponse);
         }
     }
 }

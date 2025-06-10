@@ -1,16 +1,19 @@
 package back.controller;
 
-import back.model.LoginRequest;
-import back.model.RegisterRequest;
-import back.model.LoginResponseModel;
-import back.service.LoginService;
-import back.util.JwtUtil;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import back.model.LoginRequest;
+import back.model.LoginResponseModel;
+import back.model.RegisterRequest;
+import back.service.LoginService;
+import back.util.JwtUtil;
 
 @RestController
 @RequestMapping("/v1/auth")
@@ -28,7 +31,7 @@ public class LoginController {
         if (success) {
             String token = JwtUtil.generateToken(loginRequest.getUsername());
             logger.info("Login successful for username: {}", loginRequest.getUsername());
-            return ResponseEntity.ok(new LoginResponseModel("登录成功" , 200, token));
+            return ResponseEntity.ok(new LoginResponseModel("" , 200, token));
         } else {
             logger.warn("Login failed for username: {}", loginRequest.getUsername());
             return ResponseEntity.status(401).body(new LoginResponseModel("用户名或密码错误", 401, null));

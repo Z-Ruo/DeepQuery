@@ -1,261 +1,91 @@
+// 认证相关的API调用
 import axios from 'axios';
 
-// 修改 IP 地址为 111.229.211.148
-const ip = "111.229.211.148";
-
-// 登录 API
-export const login = (username, password) => {
-  return axios.post('/auth/login', { username, password, ip }).then(response => {
-    if (response.data.code === 200 && response.data.token) {
-      localStorage.setItem('token', response.data.token);
+/**
+ * 用户登录
+ * @param {string} username - 用户名
+ * @param {string} password - 密码
+ * @returns {Promise} - 返回包含token的Promise
+ */
+export const login = async (username, password) => {
+  try {
+    // 获取用户IP地址 (简化处理，实际可能需要其他方式获取)
+    const ip = window.location.hostname || '127.0.0.1';
+    
+    // 使用全局axios实例
+    const response = await axios.post('/v1/auth/login', {
+      username,
+      password,
+      ip
+    });
+    console.log('登录响应:', response.data);
+    // 如果登录成功，保存token和用户名到localStorage
+    if (response.data && response.data.status === 200) {
+      localStorage.setItem('token', response.data.token); // 确保key为'token'，如果拦截器使用'token'
       localStorage.setItem('username', username);
     }
+    
     return response.data;
-  });
-};
-
-// 注册 API
-export const register = (username, password, phone) => {
-  return axios.post('/auth/register', { username, password, phone }, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  }).then(response => response.data);
-};
-
-
-export async function getChatCompletions(model, messages,kbs,uploadedImagesBase64) {
-  const url = axios.defaults.baseURL + '/chat/stream';
-  return await fetch(url, {
-    method: 'POST',
-    body: JSON.stringify({
-      model: model,
-      messages: messages,
-     temperature: 1.0,
-    kbs: kbs,
-      sessionId:localStorage.getItem('sessionId'),
-      images: uploadedImagesBase64,
-    }),
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('token')}`
-    }
-  });
-}
-
-//获取相关问题的 API
-// export const getRelatedQuestions = (question) => {
-//   return axios.post('/related_questions', {
-//     question
-//   });
-// };
-
-// 添加获取相关文献的 API
-export const getReferenceFiles = (questionId) => {
-  return axios.get(`/reference_files?question_id=${questionId}`, {
-    headers: {
-      Authorization: `Bearer YOUR_API_KEY`,
-      'Content-Type': 'application/json'
-    }
-  });
-};
-// 上传图片 API
-export const uploadImage = (image) => {
-  const formData = new FormData();
-  formData.append('image', image);
-  return axios.post('/image', formData);
-};
-
-// 获取历史记录 API
-// export const getHistoryRecords = async () => {
-//   try {
-//     const response = await axios.post('/history', {
-//       userId: localStorage.getItem('userId')
-//     }, {
-//       headers: {
-//         'Content-Type': 'application/json',
-//         'Authorization': `Bearer ${localStorage.getItem('token')}`
-//       }
-//     });
-//     return response;
-//   } catch (error) {
-//     throw error;
-//   }
-// };
-
-
-// 修改密码 API
-export const updatePassword = async (phone, oldPassword, newPassword) => {
-  // 参数验证
-  if (!phone || !oldPassword || !newPassword) {
-    throw new Error('所有字段都是必填的');
-  }
-
-  // 手机号格式验证
-  const phoneRegex = /^1[3-9]\d{9}$/;
-  if (!phoneRegex.test(phone)) {
-    throw new Error('手机号格式不正确');
-  }
-
-  // 密码长度验证
-  if (newPassword.length < 6) {
-    throw new Error('新密码长度不能小于6位');
-  }
-
-  try {
-    return await axios.post('/update-password', {
-      phone,
-      oldPassword,
-      newPassword
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
   } catch (error) {
-    if (error.response) {
-      // 服务器返回的错误
-      switch (error.response.status) {
-        case 400:
-          throw new Error('请求参数错误');
-        case 401:
-          throw new Error('原密码错误');
-        case 403:
-          throw new Error('没有权限，请重新登录');
-        case 500:
-          throw new Error('服务器内部错误');
-        default:
-          throw new Error('修改密码失败');
-      }
-    }
+    console.error('登录失败:', error);
     throw error;
   }
 };
 
-
-// 解析 SSE 数据流
-export const parseSSE = () => {
-  let buffer = '';
-  let currentEvent = {
-    type: 'message',
-    data: ''
-  };
-
-  return new TransformStream({
-    transform(chunk, controller) {
-      buffer += chunk;
-
-      while (true) {
-        // 处理可能存在的 \r\n 换行符
-        const eventEndIndex = buffer.indexOf('\n\n');
-        if (eventEndIndex === -1) break;
-
-        const eventData = buffer.substring(0, eventEndIndex);
-        buffer = buffer.substring(eventEndIndex + 2);
-
-        // 重置事件对象
-        currentEvent = { type: 'message', data: '', id: '', retry: '' };
-
-        eventData.split(/\n|\r\n/).forEach(line => {
-          const colonIndex = line.indexOf(':');
-          if (colonIndex <= 0) return;
-
-          const field = line.substring(0, colonIndex).trim();
-          const value = line.substring(colonIndex + 1).trim();
-
-          switch (field) {
-            case 'event':
-              currentEvent.type = value;
-              break;
-            case 'data':
-              // 确保只解析JSON部分
-              if (value.startsWith('data:')) {
-                currentEvent.data += value.substring(5) + '\n';
-              } else {
-                currentEvent.data += value + '\n';
-              }
-              break;
-            case 'id':
-              currentEvent.id = value;
-              break;
-            case 'retry':
-              currentEvent.retry = parseInt(value, 10);
-              break;
-          }
-        });
-
-        // 处理数据内容
-        try {
-          if (currentEvent.data.startsWith('[DONE]')) {
-            controller.enqueue({ type: 'complete' });
-          } else if (currentEvent.data) {
-            const cleanedData = currentEvent.data.trimEnd();
-            // 确保解析的是有效的JSON
-            const jsonData = JSON.parse(cleanedData);
-            controller.enqueue({
-              type: currentEvent.type,
-              data: jsonData
-            });
-          }
-        } catch (error) {
-          console.error('SSE 解析错误:', error);
-          controller.enqueue({
-            type: 'error',
-            error: `解析错误: ${error.message}`
-          });
-        }
-      }
-    }
-  });
-};
-
-
-export const logout = () => {
-  // 清除所有存储的认证信息
-  localStorage.removeItem('token');
-  localStorage.removeItem('userId');
+/**
+ * 用户注册
+ * @param {string} username - 用户名
+ * @param {string} password - 密码
+ * @param {string} phone - 手机号
+ * @returns {Promise} - 返回注册结果的Promise
+ */
+export const register = async (username, password, phone) => {
+  try {
+    // 使用全局axios实例
+    const response = await axios.post('/v1/auth/register', {
+      username,
+      password,
+      phone
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('注册失败:', error);
+    throw error;
+  }
 };
 
 /**
- * 使用 RAG 进行问答
- * @param {string} query - 用户问题
- * @param {string} collectionName - 知识库名称
- * @param {number} maxResults - 最大检索结果数
- * @param {number} sessionId - 会话ID（可选）
- * @returns {Promise} - 返回RAG问答结果
+ * 检查用户是否已登录
+ * @returns {boolean} - 返回用户是否已登录
  */
-export const askRagQuestion = (query, collectionName, maxResults = 3, sessionId = null) => {
-  return axios.post('/v1/rag/question', {
-    query,
-    collectionName,
-    maxResults,
-    sessionId,
-    model: 'qwen2.5:0.5b' // 默认使用这个模型
-  }, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  }).then(response => response.data);
+export const isLoggedIn = () => {
+  return !!localStorage.getItem('token'); // 确保key为'token'
 };
 
-// 获取所有知识库列表
-export const getKnowledgeBases = () => {
-  return axios.post('/v1/rag/collections/list', {}, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  }).then(response => response.data);
+/**
+ * 获取当前用户名
+ * @returns {string|null} - 返回用户名或null
+ */
+export const getCurrentUsername = () => {
+  return localStorage.getItem('username');
 };
 
-// 获取特定知识库中的文档
-export const getKnowledgeBaseDocuments = (collectionName) => {
-  return axios.post(`/v1/rag/collections/${collectionName}/documents`, {}, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  }).then(response => response.data);
+/**
+ * 用户登出
+ */
+export const logout = () => {
+  localStorage.removeItem('token'); // 确保key为'token'
+  localStorage.removeItem('username');
+  // 可选：通知服务器端会话失效，如果后端有相应接口
+  // return axios.post('/v1/auth/logout'); 
+};
+
+// 默认导出所有认证相关的函数，以便在 api/index.js 中统一管理
+export default {
+  login,
+  register,
+  isLoggedIn,
+  getCurrentUsername,
+  logout
 };

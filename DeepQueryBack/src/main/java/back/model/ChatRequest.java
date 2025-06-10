@@ -1,7 +1,8 @@
 package back.model;
 
-import lombok.Data;
 import java.time.LocalDate;
+
+import lombok.Data;
 
 
 /**
@@ -20,7 +21,7 @@ public class ChatRequest {
     // 使用Ollama模型名称
     private String ollama_model="qwen2.5:0.5b";
     // 会话id
-    private Integer sessionId;
+    private Integer sessionId=1;
     // 历史记录
     private History history;
     // 问题信息

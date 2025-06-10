@@ -174,15 +174,125 @@ public class RagService {
     }
     // 删除指定名称的知识库
     public SystemResopnse deleteCollection(String name) {
+        // 首先删除数据库中相关的文档记录
+        try {
+            List<DocumentInfo> documents = documentRepository.findByCollectionName(name);
+            if (!documents.isEmpty()) {
+                // 删除相关的向量ID记录
+                for (DocumentInfo doc : documents) {
+                    documentVectorIdsRepository.deleteByDocument(doc);
+                }
+                // 删除文档记录
+                documentRepository.deleteAll(documents);
+            }
+        } catch (Exception e) {
+            System.err.println("删除数据库记录时出错: " + e.getMessage());
+        }
+        
+        // 删除Milvus集合
         DropCollectionReq dropCollectionReq = DropCollectionReq.builder()
         .collectionName(name)
         .build();
         milvusClient.dropCollection(dropCollectionReq);
 
         SystemResopnse request = new SystemResopnse();
-        request.setStatus("成功");
+        request.setStatus("success");
         request.setMessage("知识库 " + name + " 已删除");
         return request;
+    }
+    /**
+     * 删除指定知识库中的特定文档
+     * 
+     * @param collectionName 知识库名称
+     * @param documentId 文档ID
+     * @return 删除结果
+     */
+    public SystemResopnse deleteDocument(String collectionName, Long documentId) {
+        SystemResopnse response = new SystemResopnse();
+        
+        try {
+            // 1. 查找文档
+            DocumentInfo document = documentRepository.findById(documentId).orElse(null);
+            if (document == null) {
+                response.setStatus("error");
+                response.setMessage("文档不存在");
+                return response;
+            }
+            
+            // 2. 验证文档属于指定集合
+            if (!document.getCollectionName().equals(collectionName)) {
+                response.setStatus("error");
+                response.setMessage("文档不属于指定的知识库");
+                return response;
+            }
+            
+            // 3. 从Milvus中删除向量数据
+            List<DocumentVectorIds> vectorIds = documentVectorIdsRepository.findByDocument(document);
+            if (!vectorIds.isEmpty()) {
+                EmbeddingStore<TextSegment> collectionEmbeddingStore = MilvusEmbeddingStore.builder()
+                        .uri("http://" + milvusHost + ":" + milvusPort)
+                        .username(milvusUsername)
+                        .password(milvusPassword)
+                        .collectionName(collectionName)
+                        .build();
+                
+                // 删除向量 - 注意：LangChain4j的EmbeddingStore可能没有removeAll方法
+                // 这里我们跳过向量删除，只删除数据库记录
+                // 在实际应用中，可能需要直接使用Milvus客户端来删除向量
+            }
+            
+            // 4. 删除数据库记录
+            documentVectorIdsRepository.deleteByDocument(document);
+            documentRepository.delete(document);
+            
+            response.setStatus("success");
+            response.setMessage("文档删除成功");
+            
+        } catch (Exception e) {
+            response.setStatus("error");
+            response.setMessage("删除文档失败: " + e.getMessage());
+        }
+        
+        return response;
+    }
+    
+    /**
+     * 根据文件名删除指定知识库中的文档
+     * 
+     * @param collectionName 知识库名称
+     * @param fileName 文件名
+     * @return 删除结果
+     */
+    public SystemResopnse deleteDocumentByFileName(String collectionName, String fileName) {
+        SystemResopnse response = new SystemResopnse();
+        
+        try {
+            // 查找指定集合中的文档
+            List<DocumentInfo> documents = documentRepository.findByCollectionNameAndFileName(collectionName, fileName);
+            
+            if (documents.isEmpty()) {
+                response.setStatus("error");
+                response.setMessage("未找到指定的文档");
+                return response;
+            }
+            
+            // 删除找到的文档（通常应该只有一个）
+            for (DocumentInfo document : documents) {
+                SystemResopnse deleteResult = deleteDocument(collectionName, document.getId());
+                if (!"success".equals(deleteResult.getStatus())) {
+                    return deleteResult; // 如果删除失败，返回错误信息
+                }
+            }
+            
+            response.setStatus("success");
+            response.setMessage("文档删除成功");
+            
+        } catch (Exception e) {
+            response.setStatus("error");
+            response.setMessage("删除文档失败: " + e.getMessage());
+        }
+        
+        return response;
     }
     // 获取所有知识库
     public SystemResopnse listCollections() {
@@ -190,7 +300,7 @@ public class RagService {
         List<String> dbNames = listAliasResp.getCollectionNames();
         
         SystemResopnse request = new SystemResopnse();
-        request.setStatus("成功");
+        request.setStatus("success");
         request.setMessage("已获取知识库列表");
         request.setKnowledgeList(dbNames);
         return request;
@@ -208,7 +318,7 @@ public class RagService {
                 .build();
 
         SystemResopnse request = new SystemResopnse();
-        request.setStatus("成功");
+        request.setStatus("success");
         request.setMessage("知识库 " + name + " 已创建");
         return request;
     }

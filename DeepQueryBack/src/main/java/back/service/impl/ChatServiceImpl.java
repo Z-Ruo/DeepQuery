@@ -142,6 +142,9 @@ public class ChatServiceImpl implements ChatService {
             Request request = buildZhipuRequest(requestDTO, false);
             Response response = client.newCall(request).execute();
             ResponseBody responseBodyObj = response.body();
+            if (responseBodyObj == null) {
+                throw new RuntimeException("Response body is null");
+            }
             String responseBody = responseBodyObj.string();
             if (responseBody.isEmpty()) {
                 throw new RuntimeException("Response body is empty");
@@ -179,7 +182,11 @@ public class ChatServiceImpl implements ChatService {
             System.out.println(response);
 
             // 解析响应内容并提取嵌套的 content 字段
-            String responseBody = response.body().string();
+            ResponseBody responseBodyObj = response.body();
+            if (responseBodyObj == null) {
+                throw new RuntimeException("Response body is null");
+            }
+            String responseBody = responseBodyObj.string();
             String extractedContent;
             try {
                 JsonNode rootNode = objectMapper.readTree(responseBody);
@@ -213,10 +220,24 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public SseEmitter streamChat(ChatRequest requestDTO) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT.toMillis());
-        // 修复异常捕获冲突
+        
+        // 设置超时和错误处理回调
+        emitter.onTimeout(() -> {
+            emitter.completeWithError(new RuntimeException("SSE timeout"));
+        });
+        
+        emitter.onError((throwable) -> {
+            emitter.completeWithError(throwable);
+        });
+        
+        // 根据状态选择不同的流式处理方法
         executor.execute(() -> {
             try {
-                executeStreamingRequest(emitter, requestDTO);
+                if ("zhipu".equals(requestDTO.getStatus())) {
+                    executeZhipuStreamingRequest(emitter, requestDTO);
+                } else {
+                    executeOllamaStreamingRequest(emitter, requestDTO);
+                }
             } catch (JsonProcessingException e) {
                 sendError(emitter, "JSON processing failed: " + e.getMessage());
             } catch (Exception e) {
@@ -227,7 +248,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
 
-    private void executeStreamingRequest(SseEmitter emitter, ChatRequest requestDTO) throws JsonProcessingException {
+    private void executeOllamaStreamingRequest(SseEmitter emitter, ChatRequest requestDTO) throws JsonProcessingException {
         Request request = buildOllamaRequest(requestDTO,true);
         client.newCall(request).enqueue(new Callback() {
             @Override
@@ -235,11 +256,11 @@ public class ChatServiceImpl implements ChatService {
                 ResponseBody body = response.body();
                 System.out.println(body);
 
-                BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream()));
                 // 修复流式响应的空指针问题
                 if (body == null) {
                     throw new RuntimeException("Response body is null");
                 }
+                BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream()));
                 StringBuilder accumulatedContent = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -254,16 +275,24 @@ public class ChatServiceImpl implements ChatService {
 
                 // 在流结束后保存累积的内容到数据库
                 String finalContent = accumulatedContent.toString();
-                HistoryRecordInfo historyRecordInfo = new HistoryRecordInfo();
-                historyRecordInfo.setContent(finalContent);
-                historyRecordInfo.setRole("model");
-                historyRecordInfo.setTimestamp(Instant.now());
-                DialogueSessionInfo dialogueSessionInfo = dialogueSessionsRepository.findById(requestDTO.getSessionId()).orElse(null);
-                historyRecordInfo.setSession(dialogueSessionInfo);
-                historyRecordsRepository.save(historyRecordInfo);
+                
+                // 检查sessionId是否为null
+                if (requestDTO.getSessionId() != null) {
+                    HistoryRecordInfo historyRecordInfo = new HistoryRecordInfo();
+                    historyRecordInfo.setContent(finalContent);
+                    historyRecordInfo.setRole("model");
+                    historyRecordInfo.setTimestamp(Instant.now());
+                    DialogueSessionInfo dialogueSessionInfo = dialogueSessionsRepository.findById(requestDTO.getSessionId()).orElse(null);
+                    historyRecordInfo.setSession(dialogueSessionInfo);
+                    historyRecordsRepository.save(historyRecordInfo);
+                } else {
+                    System.err.println("Warning: sessionId is null, skipping history record save");
+                }
 
-                ChatResponse chatResponse  = parseResponse(finalContent,requestDTO);
-                emitter.send(chatResponse);
+                // 发送完成事件
+                emitter.send(SseEmitter.event()
+                    .data("[DONE]")
+                    .name("done"));
                 emitter.complete();
 
             }
@@ -275,7 +304,7 @@ public class ChatServiceImpl implements ChatService {
         });
     }
     /**
-     * 处理每个数据块
+     * 处理Ollama的每个数据块
      *
      * @param emitter SseEmitter 对象
      * @param chunk   数据块
@@ -285,19 +314,127 @@ public class ChatServiceImpl implements ChatService {
         ChatStreamResponse chatStreamResponse = new ChatStreamResponse();
         chatStreamResponse.setContent(chunk.getMessage().getContent());
         chatStreamResponse.setDone(chunk.isDone());
-        emitter.send(objectMapper.writeValueAsString(chatStreamResponse));
+        
+        // 使用正确的SSE格式发送数据
+        emitter.send(SseEmitter.event()
+            .data(objectMapper.writeValueAsString(chatStreamResponse))
+            .name("message"));
+    }
+
+    private void executeZhipuStreamingRequest(SseEmitter emitter, ChatRequest requestDTO) throws JsonProcessingException {
+        Request request = buildZhipuRequest(requestDTO, true);
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
+                ResponseBody body = response.body();
+                System.out.println(body);
+
+                // 修复流式响应的空指针问题
+                if (body == null) {
+                    throw new RuntimeException("Response body is null");
+                }
+                BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream()));
+                StringBuilder accumulatedContent = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    // 智谱AI的流式响应格式是 "data: {json}"
+                    if (line.startsWith("data: ") && !line.equals("data: [DONE]")) {
+                        String jsonData = line.substring(6); // 移除 "data: " 前缀
+                        try {
+                            JsonNode chunk = objectMapper.readTree(jsonData);
+                            String content = processZhipuChunk(emitter, chunk);
+                            if (content != null) {
+                                accumulatedContent.append(content);
+                            }
+                        } catch (JsonProcessingException e) {
+                            System.err.println("Failed to parse zhipu chunk: " + e.getMessage());
+                        }
+                    } else if (line.equals("data: [DONE]")) {
+                        break;
+                    }
+                }
+
+                // 在流结束后保存累积的内容到数据库
+                String finalContent = accumulatedContent.toString();
+                
+                // 检查sessionId是否为null
+                if (requestDTO.getSessionId() != null) {
+                    HistoryRecordInfo historyRecordInfo = new HistoryRecordInfo();
+                    historyRecordInfo.setContent(finalContent);
+                    historyRecordInfo.setRole("assistant");
+                    historyRecordInfo.setTimestamp(Instant.now());
+                    DialogueSessionInfo dialogueSessionInfo = dialogueSessionsRepository.findById(requestDTO.getSessionId()).orElse(null);
+                    historyRecordInfo.setSession(dialogueSessionInfo);
+                    historyRecordsRepository.save(historyRecordInfo);
+                } else {
+                    System.err.println("Warning: sessionId is null, skipping history record save");
+                }
+
+                // 发送完成事件
+                emitter.send(SseEmitter.event()
+                    .data("[DONE]")
+                    .name("done"));
+                emitter.complete();
+
+            }
+
+            @Override
+            public void onFailure(@NotNull Call call, @NotNull IOException e) {
+                sendError(emitter, "Connection failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * 处理智谱AI的每个数据块
+     *
+     * @param emitter SseEmitter 对象
+     * @param chunk   数据块
+     * @return 提取的内容，如果没有内容则返回null
+     * @throws IOException 处理数据块时发生的异常
+     */
+    private String processZhipuChunk(SseEmitter emitter, JsonNode chunk) throws IOException {
+        // 智谱AI流式响应格式: {"choices":[{"delta":{"content":"..."}}]}
+        JsonNode choices = chunk.path("choices");
+        if (choices.isArray() && choices.size() > 0) {
+            JsonNode delta = choices.get(0).path("delta");
+            JsonNode contentNode = delta.path("content");
+            
+            if (!contentNode.isMissingNode() && !contentNode.isNull()) {
+                String content = contentNode.asText();
+                
+                ChatStreamResponse chatStreamResponse = new ChatStreamResponse();
+                chatStreamResponse.setContent(content);
+                chatStreamResponse.setDone(false);
+                
+                // 使用正确的SSE格式发送数据
+                emitter.send(SseEmitter.event()
+                    .data(objectMapper.writeValueAsString(chatStreamResponse))
+                    .name("message"));
+                
+                return content;
+            }
+        }
+        return null;
     }
 
 
     private void sendError(SseEmitter emitter, String message) {
         try {
-            emitter.send(objectMapper.writeValueAsString(
-                    new ChatResponse()));
-            emitter.completeWithError(new IOException(message));
-        } catch (JsonProcessingException e) {
-            emitter.completeWithError(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            // 创建简单的错误消息，避免复杂对象序列化问题
+            String errorMessage = "{\"error\":\"" + message.replace("\"", "\\\"") + "\",\"timestamp\":\"" + Instant.now() + "\"}";
+            
+            emitter.send(SseEmitter.event()
+                    .data(errorMessage)
+                    .name("error"));
+            emitter.completeWithError(new RuntimeException(message));
+        } catch (Exception e) {
+            // 如果发送错误消息也失败了，直接完成并报错
+            try {
+                emitter.completeWithError(new RuntimeException(message + " (原始错误); 发送错误消息时也失败了: " + e.getMessage()));
+            } catch (Exception ignored) {
+                // 忽略最后的异常，避免无限递归
+            }
         }
     }
 
@@ -321,7 +458,11 @@ public class ChatServiceImpl implements ChatService {
 
 
         // 解析响应内容并提取嵌套的 content 字段
-        String responseBody = response.body().string();
+        ResponseBody responseBodyObj = response.body();
+        if (responseBodyObj == null) {
+            throw new RuntimeException("Response body is null");
+        }
+        String responseBody = responseBodyObj.string();
         System.out.println(responseBody);
         String extractedContent;
         try {
@@ -374,6 +515,12 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private void creatHistory(ChatRequest requestDTO) {
+        // 检查sessionId是否为null
+        if (requestDTO.getSessionId() == null) {
+            System.err.println("Warning: sessionId is null, skipping history creation");
+            return;
+        }
+        
         // 保存数据
         HistoryRecordInfo historyRecordInfo = new HistoryRecordInfo();
         historyRecordInfo.setContent(requestDTO.getQuestion().getContent());
